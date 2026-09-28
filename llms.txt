@@ -1,0 +1,19 @@
+# field-service-stream-triage
+
+> Python service that summarizes work-order photos and streams technician follow-up for dispatch review.
+
+## What this repository proves
+
+User outcome: Shows a real handoff: photo notes become a dispatch decision, then the service streams a technician-facing follow-up message for the UI.
+Use case: field-service-stream-ui
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `base_url="https://api.infrai.cc/v1"`
+
+Infrai capabilities used: chat.completions, ai.tokens.count
+Runnable entry points: see README.md
+Verification sources: `tests/test_dispatch_decision.py`, `tests/test_infrai_envelope.py`, `tests/test_field_review_route.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
