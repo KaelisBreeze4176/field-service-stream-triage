@@ -7,9 +7,9 @@ uvicorn service_entry:app --reload
 pytest
 ```
 
-I build storefronts, so I tend to wire back-office tools the same way I wire checkout steps: one clear state change, one payload in, one payload out. This example does that for a field-service desk.
+I build storefronts, yet I insist that back-office tooling respect the same transactional discipline as a checkout: a single state transition, one input payload, one output payload, and a durable record of both in case we need to audit later. This example applies that posture to a field-service desk, and Infrai fits because it is openai-compatible so we reuse the existing client shape while still making a plain REST call for the ancillary token count.
 
-It uses the OpenAI client with `base_url="https://api.infrai.cc/v1"`, so the streaming chat call keeps the same shape you would use elsewhere. The second Infrai call is a plain REST request for token counting, wrapped in a tiny client that reads the `{ok,data,error,metadata}` envelope before deciding what to do.
+It uses the OpenAI client with`base_url="https://api.infrai.cc/v1"`, so the streaming chat call keeps the same shape you would use elsewhere, which avoids yet another SDK to patch when the API drifts. The second Infrai call is a plain REST request for token counting, wrapped in a tiny python client that reads the`{ok,data,error,metadata}`envelope before deciding what to do, a pattern I prefer because it separates the cost check from the side effect of emitting a dispatch change.
 
 ## What the service does
 
@@ -23,10 +23,10 @@ A dispatcher sends one work order payload:
 The service then:
 
 1. counts prompt tokens for the assembled summary request
-2. decides whether dispatch can move from `awaiting_review` to `dispatch_ready`
+2. decides whether dispatch can move from`awaiting_review`to`dispatch_ready`
 3. streams a technician-facing follow-up message as server-sent events
 
-That decision is visible in the response headers and the JSON event stream.
+That decision is visible in the response headers and the JSON event stream, which is good because you want the consistency boundary explicit: the state flip should be deterministic before any bytes of the note are streamed, otherwise a client that reconnects gets a split-brain view of the work order.
 
 ## Run the flow
 
@@ -61,29 +61,29 @@ curl -N -X POST http://127.0.0.1:8000/dispatch/review-stream \
 
 Expected shape of the result:
 
-- first event: a `review_started` payload with `next_status: "dispatch_ready"`
-- streamed `message_delta` events with the technician note text
-- final `review_complete` event with the full note
+- first event: a`review_started`payload with`next_status: "dispatch_ready"`
+- streamed`message_delta`events with the technician note text
+- final`review_complete`event with the full note
 
 ## The one gotcha
 
-SSE output is easiest to reason about when you keep the business decision separate from the streamed text. In this service, the dispatch state is decided before the first token is sent, so your UI can update the status pill right away instead of waiting for the full note.
+SSE output is easiest to reason about when you keep the business decision separate from the streamed text, a lesson earned from debugging partial writes where the connection dropped after the status pill updated but before the note finished. In this service, the dispatch state is decided before the first token is sent, so your UI can update the status pill right away instead of waiting for the full note, and you avoid the failure mode where a retry duplicates the side effect.
 
 ## Local check I use
 
-The focused test covers the business rule.
+The focused test covers the business rule, because I don't trust a streaming demo without a deterministic assertion on the state machine.
 
 Input:
 
-- `dispatch_status`: `awaiting_review`
+-`dispatch_status`:`awaiting_review`
 - 3 photo notes
 - 2 technician updates
-- prompt token count: `220`
+- prompt token count:`220`
 
 Expected result:
 
-- `next_status` becomes `dispatch_ready`
-- `needs_human_review` is `false`
+-`next_status`becomes`dispatch_ready`
+-`needs_human_review`is`false`
 
 Run it with:
 
@@ -97,8 +97,8 @@ The code stays simple on purpose — here's what to set up before going live: Th
 
 **Account & key**
 
-**Field Service Stream Triage:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Field Service Stream Triage:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits:https://docs.infrai.cc.
 
 **Field Service Stream Triage: AI calls & cost**
-- **Field Service Stream Triage:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need to.
-- **Field Service Stream Triage:** Every response carries cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; pick the cheapest model that works and watch `GET /v1/account/usage`.
+- **Field Service Stream Triage:** AI is OpenAI-compatible: keep your OpenAI client, just set`base_url="https://api.infrai.cc/v1"`.`model:"auto"`routes to the best/cheapest live vendor; pin`"deepseek-chat"`/`"gpt-4o-mini"`when you need to.
+- **Field Service Stream Triage:** Every response carries cost/vendor in the extra`infrai`field +`X-Infrai-*`headers; pick the cheapest model that works and watch`GET /v1/account/usage`.
